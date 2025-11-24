@@ -1,0 +1,14 @@
+# API Keys and secrets
+.env
+*.env
+*_key.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.log
+
+# System
+.DS_Store
+
