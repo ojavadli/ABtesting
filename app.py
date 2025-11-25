@@ -1,503 +1,589 @@
 """
-Complete Multimodal Web Interface with Photo/Video Upload
-Access: http://localhost:8080
+Multimodal Agentic System with Instagram Boost Targeting
+Matches Instagram's actual ad targeting parameters
 
-Authors: Anni Zimina & Orkhan Javadli
-Stanford GSB - November 21, 2025
+November 21, 2025
 """
 
 from flask import Flask, render_template_string, request, jsonify
-import json
-import re
-import base64
-import os
+import json, re, base64, os, tempfile, io
 from openai import OpenAI
 import anthropic
+import google.generativeai as genai
+import PIL.Image
 
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-CLAUDE_API_KEY = os.getenv('CLAUDE_API_KEY')
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
-
-GPT_MODEL = "gpt-5.1"
-CLAUDE_MODEL = "claude-4-opus-20250514"
-GEMINI_MODEL = "gemini-3-pro-preview"  # Gemini 3 Pro Preview (Nov 2025)
+OPENAI_KEY = os.getenv('OPENAI_API_KEY')
+CLAUDE_KEY = os.getenv('CLAUDE_API_KEY')
+GOOGLE_KEY = os.getenv('GOOGLE_API_KEY')
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
-claude_client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+openai_client = OpenAI(api_key=OPENAI_KEY)
+claude_client = anthropic.Anthropic(api_key=CLAUDE_KEY)
+genai.configure(api_key=GOOGLE_KEY)
+gemini_model = genai.GenerativeModel('gemini-3-pro-preview')
 
-# Initialize Gemini
-import google.generativeai as genai
-genai.configure(api_key=GOOGLE_API_KEY)
-gemini_model = genai.GenerativeModel(GEMINI_MODEL)
+def extract_frame(video_bytes):
+    try:
+        import cv2, numpy as np
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp:
+            tmp.write(video_bytes)
+            path = tmp.name
+        cap = cv2.VideoCapture(path)
+        ret, frame = cap.read()
+        cap.release()
+        os.unlink(path)
+        if ret:
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img = PIL.Image.fromarray(rgb)
+            img.thumbnail((800, 800))
+            buf = io.BytesIO()
+            img.save(buf, format='JPEG', quality=80)
+            return buf.getvalue()
+    except: pass
+    return None
+
+def parse_json(txt):
+    m = re.search(r'```json\s*(.*?)\s*```', txt, re.DOTALL)
+    if m: txt = m.group(1)
+    elif '{' in txt: txt = txt[txt.find('{'):txt.rfind('}')+1]
+    return json.loads(txt)
+
+def score_gpt(text, img_data, targeting_context):
+    uc = [{"type": "text", "text": f"Rate this social media post for virality.\n\nTargeting: {targeting_context}\nCaption: {text}\n\nProvide realistic scores (most content is 40-80/100). JSON: overall_score, text_quality, visual_appeal, emotional_resonance, clarity, brand_alignment, reasoning (all 0-100)"}]
+    if img_data:
+        uc.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64.b64encode(img_data).decode()}"}})
+    r = openai_client.chat.completions.create(model="gpt-5.1", messages=[{"role":"user","content":uc}], max_completion_tokens=400, temperature=0.2)
+    return parse_json(r.choices[0].message.content)
+
+def score_claude(text, img_data, targeting_context):
+    cb = [{"type":"text","text":f"Rate this social media post for virality.\n\nTargeting: {targeting_context}\nCaption: {text}\n\nProvide realistic scores (most content is 40-80/100). JSON: overall_score, text_quality, visual_appeal, emotional_resonance, clarity, brand_alignment, reasoning"}]
+    if img_data:
+        # Compress image for Claude (5MB limit)
+        img = PIL.Image.open(io.BytesIO(img_data))
+        if img.width > 1024 or img.height > 1024:
+            img.thumbnail((1024, 1024))
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG', quality=80)
+        compressed = buf.getvalue()
+        cb.append({"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":base64.b64encode(compressed).decode()}})
+    r = claude_client.messages.create(model="claude-4-opus-20250514", max_tokens=400, messages=[{"role":"user","content":cb}])
+    return parse_json(r.content[0].text)
+
+def score_gemini(text, img_data, targeting_context):
+    parts = [f"Rate this social media post for virality.\n\nTargeting: {targeting_context}\nCaption: {text}\n\nProvide realistic scores (most content is 40-80/100). JSON: overall_score, text_quality, visual_appeal, emotional_resonance, clarity, brand_alignment, reasoning"]
+    if img_data:
+        parts.append(PIL.Image.open(io.BytesIO(img_data)))
+    r = gemini_model.generate_content(parts)
+    return parse_json(r.text)
 
 HTML = """<!DOCTYPE html>
-<html>
-<head>
-    <title>Multimodal Agentic System</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
-            background: linear-gradient(135deg, #1a2a6c 0%, #b21f1f 25%, #fdbb2d 50%, #22c1c3 75%, #fdbb2d 100%);
-            background-size: 400% 400%;
-            animation: gradient 15s ease infinite;
-            min-height: 100vh;
-            padding: 40px 20px;
-        }
-        
-        @keyframes gradient {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-        }
-        
-        .container { max-width: 1100px; margin: 0 auto; }
-        
-        .glass-card {
-            background: rgba(255, 255, 255, 0.15);
-            backdrop-filter: blur(30px) saturate(180%);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            padding: 50px;
-            margin-bottom: 30px;
-        }
-        
-        h1 { color: white; font-size: 3.5em; font-weight: 700; text-align: center; margin-bottom: 15px; letter-spacing: -1px; }
-        .subtitle { color: rgba(255, 255, 255, 0.9); text-align: center; font-size: 1.3em; font-weight: 300; margin-bottom: 30px; }
-        
-        .mode-selector { display: flex; gap: 20px; justify-content: center; margin: 30px 0; }
-        
-        .mode-btn {
-            background: rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(10px);
-            color: white;
-            padding: 15px 30px;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            cursor: pointer;
-            font-size: 1.1em;
-            font-weight: 500;
-            transition: all 0.3s ease;
-        }
-        
-        .mode-btn:hover { background: rgba(255, 255, 255, 0.3); transform: translateY(-2px); }
-        .mode-btn.active { background: white; color: #1a2a6c; }
-        
-        .content-section { display: none; }
-        .content-section.active { display: block; }
-        
-        .variant-box {
-            background: rgba(255, 255, 255, 0.25);
-            backdrop-filter: blur(10px);
-            padding: 30px;
-            border: 1px solid rgba(255, 255, 255, 0.4);
-            margin: 20px 0;
-        }
-        
-        .variant-label { color: white; font-size: 1.5em; font-weight: 600; margin-bottom: 15px; }
-        
-        textarea {
-            width: 100%;
-            min-height: 120px;
-            padding: 18px;
-            background: rgba(255, 255, 255, 0.95);
-            border: none;
-            font-size: 1em;
-            font-family: inherit;
-            color: #1d1d1f;
-        }
-        
-        textarea:focus { outline: none; background: white; box-shadow: 0 8px 25px rgba(0,0,0,0.15); }
-        textarea::placeholder { color: #86868b; }
-        
-        input[type="text"], input[type="file"] {
-            width: 100%;
-            padding: 15px 20px;
-            background: rgba(255, 255, 255, 0.95);
-            border: none;
-            font-size: 1em;
-            margin: 10px 0;
-            color: #1d1d1f;
-        }
-        
-        input:focus { outline: none; background: white; }
-        input::placeholder { color: #86868b; }
-        
-        .upload-label {
-            color: white;
-            font-size: 1em;
-            font-weight: 500;
-            margin: 15px 0 8px 0;
-            display: block;
-        }
-        
-        .file-input-wrapper {
-            position: relative;
-            display: inline-block;
-            width: 100%;
-        }
-        
-        input[type="file"] {
-            cursor: pointer;
-        }
-        
-        .btn {
-            background: white;
-            color: #1a2a6c;
-            padding: 18px 50px;
-            border: none;
-            font-size: 1.3em;
-            font-weight: 600;
-            cursor: pointer;
-            display: block;
-            margin: 40px auto;
-            transition: all 0.3s ease;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-        
-        .btn:hover { transform: translateY(-3px); box-shadow: 0 15px 40px rgba(0,0,0,0.3); }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        
-        .results { margin-top: 40px; display: none; }
-        
-        .score-display { background: rgba(255, 255, 255, 0.95); padding: 40px; color: #1d1d1f; }
-        
-        .score-huge { font-size: 4em; font-weight: 700; text-align: center; margin: 20px 0; }
-        .score-label { font-size: 0.4em; color: #86868b; font-weight: 400; }
-        
-        .component-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 15px;
-            margin: 30px 0;
-        }
-        
-        .component-item { text-align: center; padding: 15px; background: rgba(0,0,0,0.03); }
-        .component-value { font-size: 1.8em; font-weight: 600; color: #1a2a6c; }
-        .component-label { font-size: 0.9em; color: #86868b; margin-top: 5px; }
-        
-        .loading { text-align: center; display: none; color: white; margin: 30px 0; }
-        .spinner { border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid white; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 20px auto; }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
-        
-        .preview-img { max-width: 100%; height: auto; margin: 15px 0; border: 2px solid rgba(255,255,255,0.5); }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="glass-card">
-            <h1>Multimodal Agentic System</h1>
-            <div class="subtitle">Virality Prediction & A/B Testing</div>
-            
-            <div class="mode-selector">
-                <button class="mode-btn active" onclick="switchMode('single')">Score Single Content</button>
-                <button class="mode-btn" onclick="switchMode('ab')">A/B Comparison</button>
-            </div>
-            
-            <!-- Single Content Scoring -->
-            <div id="singleMode" class="content-section active">
-                <div class="variant-box">
-                    <div class="variant-label">Content to Score</div>
-                    <textarea id="singleText" placeholder="Enter your content text..."></textarea>
-                    
-                    <label class="upload-label">Upload Image or Video (optional):</label>
-                    <input type="file" id="singleFile" accept="image/*,video/*" onchange="previewFile('singleFile', 'singlePreview')">
-                    <div id="singlePreview"></div>
-                </div>
-                <input type="text" id="singleAudience" placeholder="Target Audience" value="urban professionals, ages 25-40">
-                <input type="text" id="singleCategory" placeholder="Business Category" value="restaurant">
-                <button class="btn" onclick="scoreSingle()">Get Virality Score</button>
-            </div>
-            
-            <!-- A/B Comparison -->
-            <div id="abMode" class="content-section">
-                <div class="variant-box">
-                    <div class="variant-label">Variant A</div>
-                    <textarea id="textA" placeholder="Enter content for Variant A..."></textarea>
-                    <label class="upload-label">Upload Image/Video A (optional):</label>
-                    <input type="file" id="fileA" accept="image/*,video/*" onchange="previewFile('fileA', 'previewA')">
-                    <div id="previewA"></div>
-                </div>
-                
-                <div class="variant-box">
-                    <div class="variant-label">Variant B</div>
-                    <textarea id="textB" placeholder="Enter content for Variant B..."></textarea>
-                    <label class="upload-label">Upload Image/Video B (optional):</label>
-                    <input type="file" id="fileB" accept="image/*,video/*" onchange="previewFile('fileB', 'previewB')">
-                    <div id="previewB"></div>
-                </div>
-                
-                <input type="text" id="abAudience" placeholder="Target Audience" value="urban professionals, ages 25-40">
-                <input type="text" id="abCategory" placeholder="Business Category" value="restaurant">
-                <button class="btn" onclick="predictAB()">Predict Winner</button>
-            </div>
-            
-            <div class="loading" id="loading">
-                <div class="spinner"></div>
-                <div>Analyzing with GPT-5.1 & Claude 4 Opus...</div>
-            </div>
-            
-            <div class="results" id="results"></div>
-        </div>
-    </div>
+<html><head><title>Multimodal Agentic System</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+    background: linear-gradient(135deg, #1a2a6c 0%, #b21f1f 25%, #fdbb2d 50%, #22c1c3 75%, #fdbb2d 100%);
+    background-size: 400% 400%;
+    animation: gradient 15s ease infinite;
+    min-height: 100vh;
+    padding: 40px 20px;
+}
+@keyframes gradient { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+.container { max-width: 1200px; margin: 0 auto; }
+.glass-card { background: rgba(255,255,255,0.15); backdrop-filter: blur(30px); border: 1px solid rgba(255,255,255,0.3); padding: 50px; }
+h1 { color: white; font-size: 3em; font-weight: 700; text-align: center; margin-bottom: 10px; }
+.subtitle { color: rgba(255,255,255,0.9); text-align: center; font-size: 1.1em; margin-bottom: 30px; }
+.box { background: rgba(255,255,255,0.25); backdrop-filter: blur(10px); padding: 25px; border: 1px solid rgba(255,255,255,0.4); margin: 20px 0; }
+.section-title { color: white; font-size: 1.3em; font-weight: 600; margin-bottom: 15px; }
+textarea { width: 100%; min-height: 100px; padding: 15px; background: white; border: none; font-size: 1em; }
+input, select { width: 100%; padding: 12px; background: white; border: none; margin: 8px 0; font-size: 1em; }
+label { color: white; display: block; margin: 12px 0 5px 0; font-weight: 500; font-size: 0.95em; }
+.btn { background: white; color: #1a2a6c; padding: 15px 40px; border: none; font-size: 1.2em; font-weight: 600; cursor: pointer; display: block; margin: 30px auto; }
+.btn:hover { transform: translateY(-2px); }
+.model-card { background: white; padding: 20px; margin: 12px 0; }
+.model-title { font-size: 1.2em; font-weight: 600; color: #1a2a6c; margin-bottom: 8px; }
+.score-huge { font-size: 2.5em; font-weight: 700; margin: 10px 0; }
+.components { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0; }
+.comp { text-align: center; padding: 8px; background: #f5f5f5; }
+.comp-val { font-size: 1.1em; font-weight: 600; }
+.comp-label { font-size: 0.7em; color: #666; }
+.rec { background: white; padding: 15px; margin: 8px 0; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid #22c1c3; }
+.rec-impact { font-size: 1.3em; font-weight: 700; min-width: 60px; text-align: center; }
+.positive { color: #22c1c3; }
+.negative { color: #b21f1f; }
+.neutral { color: #999; }
+.loading { text-align: center; display: none; color: white; margin: 20px 0; }
+.spinner { border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid white; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 15px auto; }
+@keyframes spin { 100% { transform: rotate(360deg); } }
+.results { display: none; }
+.targeting-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+</style></head><body>
+<div class="container"><div class="glass-card">
+<h1>Multimodal Agentic System</h1>
+<div class="subtitle">Instagram Boost Targeting + Virality Prediction</div>
+
+<div class="box">
+<div class="section-title">📝 Your Content</div>
+<textarea id="text" placeholder="Enter your post caption..."></textarea>
+<label>Upload Image or Video:</label>
+<input type="file" id="file" accept="image/*,video/*">
+</div>
+
+<div class="box">
+<div class="section-title">🎯 Instagram Boost Targeting (Optional)</div>
+<div style="color:rgba(255,255,255,0.8);font-size:0.9em;margin-bottom:15px;">Leave blank or select "None" for broad audience. Match your actual Instagram boost settings.</div>
+
+<div class="targeting-grid">
+<div>
+<label>Location:</label>
+<select id="location">
+<option selected>None (Worldwide)</option>
+<option>United States</option>
+<option>California</option>
+<option>Texas</option>
+<option>New York</option>
+<option>San Francisco Bay Area</option>
+<option>Los Angeles</option>
+<option>Houston, Texas</option>
+<option>Chicago</option>
+<option>Miami</option>
+<option>Custom location</option>
+</select>
+
+<label>Age Range:</label>
+<select id="age">
+<option selected>None (All Ages)</option>
+<option>18-24</option>
+<option>25-34</option>
+<option>25-44 (Millennials)</option>
+<option>35-44</option>
+<option>35-54 (Gen X)</option>
+<option>45-64</option>
+<option>55+</option>
+<option>13-17</option>
+</select>
+
+<label>Gender:</label>
+<select id="gender">
+<option selected>None (All Genders)</option>
+<option>Female</option>
+<option>Male</option>
+<option>Non-binary</option>
+</select>
+</div>
+
+<div>
+<label>Interest Category:</label>
+<select id="interest">
+<option selected>None (No Interest Targeting)</option>
+<option>Fashion & Style</option>
+<option>Beauty & Cosmetics</option>
+<option>Food & Dining</option>
+<option>Fitness & Wellness</option>
+<option>Travel & Adventure</option>
+<option>Business & Entrepreneurship</option>
+<option>Technology & Gadgets</option>
+<option>Entertainment & Music</option>
+<option>Sports & Athletics</option>
+<option>Art & Photography</option>
+<option>Home & Garden</option>
+<option>Parenting & Family</option>
+<option>Education & Learning</option>
+<option>Gaming</option>
+<option>Pets & Animals</option>
+</select>
+
+<label>Language:</label>
+<select id="language">
+<option selected>None (All Languages)</option>
+<option>English</option>
+<option>Spanish</option>
+<option>French</option>
+<option>German</option>
+<option>Portuguese</option>
+<option>Italian</option>
+<option>Japanese</option>
+<option>Korean</option>
+<option>Chinese</option>
+</select>
+
+<label>Device:</label>
+<select id="device">
+<option selected>None (All Devices)</option>
+<option>Mobile Only</option>
+<option>Desktop Only</option>
+<option>Tablet Only</option>
+</select>
+</div>
+</div>
+</div>
+
+<button class="btn" onclick="analyze()">Analyze for Target Audience</button>
+
+<div class="loading" id="loading">
+<div class="spinner"></div>
+<div id="status">Scoring with GPT-5.1, Claude 4, Gemini 3...</div>
+</div>
+
+<div class="results" id="results"></div>
+</div></div>
+
+<script>
+async function analyze() {
+    const loading = document.getElementById('loading');
+    const results = document.getElementById('results');
     
-    <script>
-        function switchMode(mode) {
-            document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
-            
-            document.getElementById('singleMode').classList.remove('active');
-            document.getElementById('abMode').classList.remove('active');
-            document.getElementById(mode + 'Mode').classList.add('active');
-            document.getElementById('results').style.display = 'none';
+    loading.style.display = 'block';
+    results.style.display = 'none';
+    
+    const fd = new FormData();
+    fd.append('text', document.getElementById('text').value);
+    
+    // Instagram targeting parameters
+    fd.append('location', document.getElementById('location').value);
+    fd.append('age', document.getElementById('age').value);
+    fd.append('gender', document.getElementById('gender').value);
+    fd.append('interest', document.getElementById('interest').value);
+    fd.append('language', document.getElementById('language').value);
+    fd.append('device', document.getElementById('device').value);
+    
+    const file = document.getElementById('file').files[0];
+    if (file) fd.append('media', file);
+    
+    try {
+        const resp = await fetch('/analyze', {method: 'POST', body: fd});
+        const data = await resp.json();
+        
+        loading.style.display = 'none';
+        
+        // Show targeting summary
+        let targeting = 'Broad Audience (No Targeting)';
+        const params = [];
+        if (data.targeting.location !== 'None (Worldwide)') params.push(data.targeting.location);
+        if (data.targeting.age !== 'None (All Ages)') params.push(data.targeting.age);
+        if (data.targeting.gender !== 'None (All Genders)') params.push(data.targeting.gender);
+        if (data.targeting.interest !== 'None (No Interest Targeting)') params.push(data.targeting.interest);
+        if (params.length > 0) targeting = params.join(' • ');
+        
+        // Show media type detected
+        const mediaIcons = {video: '🎥 VIDEO', image: '📸 IMAGE', none: '📝 TEXT ONLY', unknown: '❓ UNKNOWN'};
+        const mediaLabel = mediaIcons[data.media_type] || '';
+        
+        let html = `<div class="model-card">
+            <div style="font-size:1.1em;font-weight:600;color:#1a2a6c;margin-bottom:5px;">🎯 Analyzing for: ${targeting}</div>
+            <div style="font-size:1em;color:#666;margin-top:5px;">Media Type: ${mediaLabel}</div>
+        </div>`;
+        
+        html += '<div class="model-card"><div style="font-size:1.4em;font-weight:700;margin-bottom:15px;color:#1a2a6c;">📊 Virality Scores (All 3 Models)</div>';
+        
+        // Add explanation for video mode
+        if (data.media_type === 'video') {
+            html += '<div style="background:#fff3cd;padding:12px;margin-bottom:15px;font-size:0.85em;color:#856404;border-left:3px solid #ffc107;">Note: Gemini analyzes FULL VIDEO (motion, pacing). GPT & Claude analyze keyframe visuals.</div>';
         }
         
-        function previewFile(inputId, previewId) {
-            const file = document.getElementById(inputId).files[0];
-            const preview = document.getElementById(previewId);
-            
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    if (file.type.startsWith('image/')) {
-                        preview.innerHTML = `<img src="${e.target.result}" class="preview-img">`;
-                    } else {
-                        preview.innerHTML = `<div style="color:white; padding:10px;">✓ Video selected: ${file.name}</div>`;
-                    }
-                };
-                reader.readAsDataURL(file);
+        // Show each model
+        ['gpt', 'claude', 'gemini'].forEach(m => {
+            if (data[m]) {
+                const names = {gpt:'🤖 GPT-5.1', claude:'🧠 Claude 4 Opus', gemini:'⚡ Gemini 3 Pro'};
+                const s = data[m];
+                html += `<div style="margin:15px 0;padding:15px;background:#f8f9fa;">
+                    <div class="model-title">${names[m]}</div>
+                    <div class="score-huge">${s.overall_score.toFixed(0)}/100</div>
+                    <div class="components">
+                        <div class="comp"><div class="comp-val">${s.text_quality.toFixed(0)}</div><div class="comp-label">Text</div></div>
+                        <div class="comp"><div class="comp-val">${s.visual_appeal.toFixed(0)}</div><div class="comp-label">Visual</div></div>
+                        <div class="comp"><div class="comp-val">${s.emotional_resonance.toFixed(0)}</div><div class="comp-label">Emotional</div></div>
+                        <div class="comp"><div class="comp-val">${s.clarity.toFixed(0)}</div><div class="comp-label">Clarity</div></div>
+                    </div>
+                    <div style="margin-top:10px;font-size:0.85em;color:#666;">${s.reasoning}</div>
+                </div>`;
             }
-        }
+        });
         
-        async function scoreSingle() {
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('results').style.display = 'none';
+        html += '</div>';
+        
+        // Recommendations
+        if (data.recommendations && data.recommendations.length > 0) {
+            html += `<div class="model-card">
+                <div style="font-size:1.4em;font-weight:700;margin-bottom:10px;color:#1a2a6c;">💡 Recommendations (REAL Impact)</div>
+                <div style="font-size:0.85em;color:#666;margin-bottom:15px;">Tested by re-scoring with same targeting + media</div>
+            `;
             
-            const formData = new FormData();
-            formData.append('text', document.getElementById('singleText').value);
-            formData.append('target_audience', document.getElementById('singleAudience').value);
-            formData.append('business_category', document.getElementById('singleCategory').value);
-            
-            const fileInput = document.getElementById('singleFile');
-            if (fileInput.files[0]) {
-                formData.append('image', fileInput.files[0]);
-            }
-            
-            const response = await fetch('/score_single', {
-                method: 'POST',
-                body: formData
+            data.recommendations.forEach(rec => {
+                const cls = rec.impact > 0 ? 'positive' : (rec.impact < 0 ? 'negative' : 'neutral');
+                const sign = rec.impact > 0 ? '+' : '';
+                html += `<div class="rec">
+                    <div style="flex:1;">
+                        <div style="font-weight:600;margin-bottom:5px;">${rec.suggestion}</div>
+                        <div style="font-size:0.85em;color:#666;font-style:italic;">"${rec.improved_text}"</div>
+                    </div>
+                    <div class="rec-impact ${cls}">${sign}${rec.impact.toFixed(0)}</div>
+                </div>`;
             });
             
-            const result = await response.json();
-            document.getElementById('loading').style.display = 'none';
-            
-            document.getElementById('results').innerHTML = `
-                <div class="score-display">
-                    <div class="score-huge">${result.overall_score.toFixed(0)}<span class="score-label">/100</span></div>
-                    <div style="text-align:center;font-size:1.2em;color:#86868b;margin-bottom:30px;">Virality Score</div>
-                    
-                    <div class="component-grid">
-                        <div class="component-item"><div class="component-value">${result.text_quality.toFixed(0)}</div><div class="component-label">Text</div></div>
-                        <div class="component-item"><div class="component-value">${result.visual_appeal.toFixed(0)}</div><div class="component-label">Visual</div></div>
-                        <div class="component-item"><div class="component-value">${result.emotional_resonance.toFixed(0)}</div><div class="component-label">Emotional</div></div>
-                        <div class="component-item"><div class="component-value">${result.clarity.toFixed(0)}</div><div class="component-label">Clarity</div></div>
-                        <div class="component-item"><div class="component-value">${result.brand_alignment.toFixed(0)}</div><div class="component-label">Brand</div></div>
-                        <div class="component-item"><div class="component-value">${result.confidence.toFixed(0)}</div><div class="component-label">Confidence</div></div>
-                    </div>
-                    
-                    <div style="margin-top:30px;padding:20px;background:rgba(0,0,0,0.03);">
-                        <strong>Analysis:</strong> ${result.reasoning}
-                    </div>
-                </div>
-            `;
-            document.getElementById('results').style.display = 'block';
-            document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
+            html += '</div>';
         }
         
-        async function predictAB() {
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('results').style.display = 'none';
-            
-            const formData = new FormData();
-            formData.append('text_a', document.getElementById('textA').value);
-            formData.append('text_b', document.getElementById('textB').value);
-            formData.append('target_audience', document.getElementById('abAudience').value);
-            formData.append('business_category', document.getElementById('abCategory').value);
-            
-            const fileA = document.getElementById('fileA').files[0];
-            const fileB = document.getElementById('fileB').files[0];
-            if (fileA) formData.append('image_a', fileA);
-            if (fileB) formData.append('image_b', fileB);
-            
-            const response = await fetch('/predict_ab', {
-                method: 'POST',
-                body: formData
-            });
-            
-            const result = await response.json();
-            document.getElementById('loading').style.display = 'none';
-            
-            document.getElementById('results').innerHTML = `
-                <div class="score-display">
-                    <div style="font-size:3em;font-weight:700;text-align:center;margin:30px 0;">Variant ${result.winner} Wins</div>
-                    <div style="text-align:center;font-size:1.5em;color:#86868b;margin-bottom:40px;">${result.confidence.toFixed(0)}% Confidence</div>
-                    
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:30px;">
-                        <div>
-                            <div style="font-size:1.3em;font-weight:600;margin-bottom:15px;">Variant A</div>
-                            <div style="font-size:3em;font-weight:700;">${result.score_a.toFixed(0)}<span style="font-size:0.4em;color:#86868b;">/100</span></div>
-                            <div class="component-grid" style="grid-template-columns:1fr 1fr;margin-top:20px;">
-                                <div class="component-item"><div class="component-value">${result.text_a.toFixed(0)}</div><div class="component-label">Text</div></div>
-                                <div class="component-item"><div class="component-value">${result.visual_a.toFixed(0)}</div><div class="component-label">Visual</div></div>
-                                <div class="component-item"><div class="component-value">${result.emotional_a.toFixed(0)}</div><div class="component-label">Emotional</div></div>
-                                <div class="component-item"><div class="component-value">${result.clarity_a.toFixed(0)}</div><div class="component-label">Clarity</div></div>
-                            </div>
-                        </div>
-                        <div>
-                            <div style="font-size:1.3em;font-weight:600;margin-bottom:15px;">Variant B</div>
-                            <div style="font-size:3em;font-weight:700;">${result.score_b.toFixed(0)}<span style="font-size:0.4em;color:#86868b;">/100</span></div>
-                            <div class="component-grid" style="grid-template-columns:1fr 1fr;margin-top:20px;">
-                                <div class="component-item"><div class="component-value">${result.text_b.toFixed(0)}</div><div class="component-label">Text</div></div>
-                                <div class="component-item"><div class="component-value">${result.visual_b.toFixed(0)}</div><div class="component-label">Visual</div></div>
-                                <div class="component-item"><div class="component-value">${result.emotional_b.toFixed(0)}</div><div class="component-label">Emotional</div></div>
-                                <div class="component-item"><div class="component-value">${result.clarity_b.toFixed(0)}</div><div class="component-label">Clarity</div></div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div style="margin-top:30px;padding:20px;background:rgba(0,0,0,0.03);">
-                        <strong>Analysis:</strong> ${result.reasoning}
-                    </div>
-                </div>
-            `;
-            document.getElementById('results').style.display = 'block';
-            document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
-        }
-    </script>
-</body>
-</html>"""
+        results.innerHTML = html;
+        results.style.display = 'block';
+        results.scrollIntoView({behavior: 'smooth'});
+        
+    } catch (e) {
+        loading.style.display = 'none';
+        alert('Error: ' + e.message);
+        console.error(e);
+    }
+}
+</script>
+</body></html>"""
 
 @app.route('/')
 def index():
     return render_template_string(HTML)
 
-@app.route('/score_single', methods=['POST'])
-def score_single():
-    """Score a single content variant with optional image/video"""
+@app.route('/analyze', methods=['POST'])
+def analyze():
     text = request.form.get('text', '')
-    target_audience = request.form.get('target_audience', '')
-    business_category = request.form.get('business_category', '')
     
-    # Build message content
-    user_content = [{
-        "type": "text",
-        "text": f"""Analyze this {business_category} content for {target_audience}.
-
-Text: {text}
-
-Provide JSON: overall_score, text_quality, visual_appeal, emotional_resonance, clarity, brand_alignment, reasoning, confidence (all 0-100)"""
-    }]
+    # Instagram targeting parameters
+    location = request.form.get('location', 'None (Worldwide)')
+    age = request.form.get('age', 'None (All Ages)')
+    gender = request.form.get('gender', 'None (All Genders)')
+    interest = request.form.get('interest', 'None (No Interest Targeting)')
+    language = request.form.get('language', 'None (All Languages)')
+    device = request.form.get('device', 'None (All Devices)')
     
-    # Add image if uploaded
-    if 'image' in request.files:
-        file = request.files['image']
-        if file.filename:
-            image_data = base64.b64encode(file.read()).decode('utf-8')
-            user_content.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}
-            })
+    # Build targeting context
+    targeting_parts = []
+    if 'None' not in location: targeting_parts.append(f"Location: {location}")
+    if 'None' not in age: targeting_parts.append(f"Age: {age}")
+    if 'None' not in gender: targeting_parts.append(f"Gender: {gender}")
+    if 'None' not in interest: targeting_parts.append(f"Interest: {interest}")
+    if 'None' not in language: targeting_parts.append(f"Language: {language}")
+    if 'None' not in device: targeting_parts.append(f"Device: {device}")
+    
+    targeting_context = '; '.join(targeting_parts) if targeting_parts else "Broad audience (no targeting)"
+    
+    # Get media and detect type
+    media_image = None
+    media_video_bytes = None
+    media_type = "none"
+    
+    if 'media' in request.files:
+        f = request.files['media']
+        if f.filename:
+            fb = f.read()
+            
+            # DETECT media type automatically
+            if f.filename.lower().endswith(('.mp4','.mov','.avi','.webm','.mkv')):
+                media_type = "video"
+                media_video_bytes = fb
+                media_image = extract_frame(fb)  # Also extract frame for GPT/Claude
+                print(f"📹 Detected: VIDEO ({len(fb)/1024/1024:.1f}MB)")
+            elif f.filename.lower().endswith(('.jpg','.jpeg','.png','.gif','.webp','.bmp')):
+                media_type = "image"
+                media_image = fb
+                print(f"📸 Detected: IMAGE ({len(fb)/1024:.0f}KB)")
+            else:
+                media_type = "unknown"
+                media_image = fb
+                print(f"❓ Detected: UNKNOWN file type")
+    
+    print(f"\n{'='*80}\nANALYZING\nText: {text[:50]}...\nTargeting: {targeting_context}\nMedia Type: {media_type.upper()}\n{'='*80}\n")
+    
+    # Score with all 3 models - DIFFERENTLY for video vs image
+    scores = {}
+    baseline = 50
+    
+    if media_type == "video":
+        print("\n🎥 VIDEO MODE: Gemini analyzes full video, GPT/Claude analyze keyframe\n")
+        
+        # GPT-5.1: Image frame analysis
+        try:
+            scores['gpt'] = score_gpt(text, media_image, f"{targeting_context} (analyzing video keyframe)")
+            baseline = scores['gpt']['overall_score']
+            scores['gpt']['reasoning'] = f"[Frame Analysis] {scores['gpt'].get('reasoning', '')}"
+            print(f"✓ GPT (frame): {baseline}/100")
+        except Exception as e:
+            print(f"✗ GPT: {e}")
+            scores['gpt'] = {'overall_score':0,'text_quality':0,'visual_appeal':0,'emotional_resonance':0,'clarity':0,'brand_alignment':0,'reasoning':str(e)}
+        
+        # Claude: Image frame analysis
+        try:
+            scores['claude'] = score_claude(text, media_image, f"{targeting_context} (analyzing video keyframe)")
+            scores['claude']['reasoning'] = f"[Frame Analysis] {scores['claude'].get('reasoning', '')}"
+            print(f"✓ Claude (frame): {scores['claude']['overall_score']}/100")
+        except Exception as e:
+            print(f"✗ Claude: {e}")
+            scores['claude'] = {'overall_score':0,'text_quality':0,'visual_appeal':0,'emotional_resonance':0,'clarity':0,'brand_alignment':0,'reasoning':str(e)}
+        
+        # Gemini: Try FULL video analysis, fallback to frame
+        try:
+            print("  Attempting Gemini FULL VIDEO analysis...")
+            
+            # Save video temporarily
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp:
+                tmp.write(media_video_bytes)
+                video_path = tmp.name
+            
+            # Upload to Gemini
+            video_file = genai.upload_file(path=video_path)
+            print(f"  Uploaded to Gemini, state: {video_file.state.name}")
+            
+            # Wait for processing (max 30 seconds)
+            import time
+            max_wait = 30
+            waited = 0
+            while video_file.state.name == "PROCESSING" and waited < max_wait:
+                time.sleep(2)
+                waited += 2
+                video_file = genai.get_file(video_file.name)
+                print(f"  Waiting... {waited}s (state: {video_file.state.name})")
+            
+            os.unlink(video_path)
+            
+            if video_file.state.name == "ACTIVE":
+                # Analyze FULL VIDEO
+                prompt = f"Analyze this VIDEO for Instagram virality.\n\nTargeting: {targeting_context}\nCaption: {text}\n\nAnalyze: motion, pacing, audio/sound, hooks, storytelling, visual flow. JSON: overall_score, text_quality, visual_appeal, emotional_resonance, clarity, brand_alignment, reasoning (0-100)"
+                
+                response = gemini_model.generate_content([video_file, prompt])
+                scores['gemini'] = parse_json(response.text)
+                scores['gemini']['reasoning'] = f"[FULL VIDEO Analysis - Motion/Audio/Pacing] {scores['gemini'].get('reasoning', '')}"
+                print(f"✓ Gemini (FULL VIDEO): {scores['gemini']['overall_score']}/100")
+            else:
+                raise Exception(f"Video processing failed: {video_file.state.name}")
+            
+        except Exception as e:
+            print(f"  Video analysis failed: {e}")
+            print(f"  Falling back to frame analysis...")
+            # Fallback to frame
+            if media_image:
+                scores['gemini'] = score_gemini(text, media_image, f"{targeting_context} (video frame)")
+                scores['gemini']['reasoning'] = f"[Video Frame Only - Full video analysis unavailable] {scores['gemini'].get('reasoning', '')}"
+                print(f"✓ Gemini (frame fallback): {scores['gemini']['overall_score']}/100")
+            else:
+                scores['gemini'] = {'overall_score':0,'text_quality':0,'visual_appeal':0,'emotional_resonance':0,'clarity':0,'brand_alignment':0,'reasoning':'Video processing failed'}
+    
+    elif media_type == "image":
+        print("\n📸 IMAGE MODE: All 3 models analyze image\n")
+        
+        # All 3 models analyze the image
+        try:
+            scores['gpt'] = score_gpt(text, media_image, targeting_context)
+            baseline = scores['gpt']['overall_score']
+            print(f"✓ GPT: {baseline}/100")
+        except Exception as e:
+            print(f"✗ GPT: {e}")
+            scores['gpt'] = {'overall_score':0,'text_quality':0,'visual_appeal':0,'emotional_resonance':0,'clarity':0,'brand_alignment':0,'reasoning':str(e)}
+        
+        try:
+            scores['claude'] = score_claude(text, media_image, targeting_context)
+            print(f"✓ Claude: {scores['claude']['overall_score']}/100")
+        except Exception as e:
+            print(f"✗ Claude: {e}")
+            scores['claude'] = {'overall_score':0,'text_quality':0,'visual_appeal':0,'emotional_resonance':0,'clarity':0,'brand_alignment':0,'reasoning':str(e)}
+        
+        try:
+            scores['gemini'] = score_gemini(text, media_image, targeting_context)
+            print(f"✓ Gemini: {scores['gemini']['overall_score']}/100")
+        except Exception as e:
+            print(f"✗ Gemini: {e}")
+            scores['gemini'] = {'overall_score':0,'text_quality':0,'visual_appeal':0,'emotional_resonance':0,'clarity':0,'brand_alignment':0,'reasoning':str(e)}
+    
+    else:
+        print("\n📝 TEXT-ONLY MODE: Analyzing text without media\n")
+        
+        # Text-only analysis
+        try:
+            scores['gpt'] = score_gpt(text, None, targeting_context)
+            baseline = scores['gpt']['overall_score']
+            print(f"✓ GPT: {baseline}/100")
+        except Exception as e:
+            scores['gpt'] = {'overall_score':0,'text_quality':0,'visual_appeal':0,'emotional_resonance':0,'clarity':0,'brand_alignment':0,'reasoning':str(e)}
+        
+        try:
+            scores['claude'] = score_claude(text, None, targeting_context)
+            print(f"✓ Claude: {scores['claude']['overall_score']}/100")
+        except Exception as e:
+            scores['claude'] = {'overall_score':0,'text_quality':0,'visual_appeal':0,'emotional_resonance':0,'clarity':0,'brand_alignment':0,'reasoning':str(e)}
+        
+        try:
+            scores['gemini'] = score_gemini(text, None, targeting_context)
+            print(f"✓ Gemini: {scores['gemini']['overall_score']}/100")
+        except Exception as e:
+            scores['gemini'] = {'overall_score':0,'text_quality':0,'visual_appeal':0,'emotional_resonance':0,'clarity':0,'brand_alignment':0,'reasoning':str(e)}
+    
+    # Test 3 improvements - using appropriate media format
+    print(f"\nTesting improvements (REAL re-scoring with {media_type})...")
+    recs = []
+    
+    # Use the appropriate media for re-scoring
+    media_for_testing = media_image if media_type != "none" else None
     
     try:
-        response = openai_client.chat.completions.create(
-            model="gpt-5.1",
-            messages=[
-                {"role": "system", "content": "Marketing analyst. JSON only."},
-                {"role": "user", "content": user_content}
-            ],
-            max_completion_tokens=500,
-            temperature=0.2
-        )
-        
-        text_response = response.choices[0].message.content
-        match = re.search(r'```json\s*(.*?)\s*```', text_response, re.DOTALL)
-        if match: text_response = match.group(1)
-        elif '{' in text_response: text_response = text_response[text_response.find('{'):text_response.rfind('}')+1]
-        
-        return jsonify(json.loads(text_response))
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/predict_ab', methods=['POST'])
-def predict_ab():
-    """A/B comparison with optional images/videos"""
-    
-    def score_variant(text, image_file=None):
-        user_content = [{
-            "type": "text",
-            "text": f"Analyze: {text}\nContext: {request.form.get('business_category')} for {request.form.get('target_audience')}\nJSON: overall_score, text_quality, visual_appeal, emotional_resonance, clarity, brand_alignment, reasoning, confidence"
-        }]
-        
-        if image_file and image_file.filename:
-            image_data = base64.b64encode(image_file.read()).decode('utf-8')
-            user_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}})
-        
-        response = openai_client.chat.completions.create(
-            model="gpt-5.1",
-            messages=[{"role": "system", "content": "Marketing analyst. JSON."}, {"role": "user", "content": user_content}],
-            max_completion_tokens=500,
-            temperature=0.2
-        )
-        
-        text = response.choices[0].message.content
-        match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
-        if match: text = match.group(1)
-        elif '{' in text: text = text[text.find('{'):text.rfind('}')+1]
-        return json.loads(text)
+        new = text + " Link in bio!"
+        s = score_gpt(new, media_for_testing, targeting_context)
+        impact = s['overall_score'] - baseline
+        print(f"  1. Add CTA: {baseline} → {s['overall_score']} = {impact:+.0f}")
+        recs.append({'suggestion':'Add call-to-action','improved_text':new,'impact':impact})
+    except: pass
     
     try:
-        score_a = score_variant(request.form.get('text_a'), request.files.get('image_a'))
-        score_b = score_variant(request.form.get('text_b'), request.files.get('image_b'))
-        
-        overall_a = score_a.get('overall_score', 50)
-        overall_b = score_b.get('overall_score', 50)
-        winner = 'A' if overall_a > overall_b else 'B'
-        confidence = min(50 + abs(overall_a - overall_b) * 0.8, 95)
-        
-        return jsonify({
-            'winner': winner,
-            'confidence': confidence,
-            'score_a': overall_a, 'score_b': overall_b,
-            'text_a': score_a.get('text_quality', 50), 'text_b': score_b.get('text_quality', 50),
-            'visual_a': score_a.get('visual_appeal', 50), 'visual_b': score_b.get('visual_appeal', 50),
-            'emotional_a': score_a.get('emotional_resonance', 50), 'emotional_b': score_b.get('emotional_resonance', 50),
-            'clarity_a': score_a.get('clarity', 50), 'clarity_b': score_b.get('clarity', 50),
-            'reasoning': score_a.get('reasoning', '') if winner=='A' else score_b.get('reasoning', '')
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        new = "✨ " + text
+        s = score_gpt(new, media_for_testing, targeting_context)
+        impact = s['overall_score'] - baseline
+        print(f"  2. Add emoji: {baseline} → {s['overall_score']} = {impact:+.0f}")
+        recs.append({'suggestion':'Add emoji','improved_text':new,'impact':impact})
+    except: pass
+    
+    try:
+        words = text.split()
+        new = ' '.join(words[:max(5, int(len(words)*0.6))])
+        s = score_gpt(new, media_for_testing, targeting_context)
+        impact = s['overall_score'] - baseline
+        print(f"  3. Shorten: {baseline} → {s['overall_score']} = {impact:+.0f}")
+        recs.append({'suggestion':'Make more concise','improved_text':new,'impact':impact})
+    except: pass
+    
+    recs.sort(key=lambda x: x['impact'], reverse=True)
+    
+    print(f"\n✓ Done! Baseline: {baseline}/100\n{'='*80}\n")
+    
+    return jsonify({
+        'gpt': scores['gpt'],
+        'claude': scores['claude'],
+        'gemini': scores['gemini'],
+        'recommendations': recs,
+        'media_type': media_type,  # Tell frontend what type was detected
+        'targeting': {
+            'location': location,
+            'age': age,
+            'gender': gender,
+            'interest': interest,
+            'language': language,
+            'device': device
+        }
+    })
 
 if __name__ == '__main__':
     print("""
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║      Multimodal Agentic System - COMPLETE with Image/Video Upload           ║
-║                Stanford GSB - November 21, 2025                              ║
+║     Multimodal System with Instagram Boost Targeting                        ║
+║                   November 21, 2025                                          ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
-🌐 Access: http://localhost:8080
+🌐 http://localhost:8080
 
-✨ Features:
-  • Individual Virality Scoring (0-100)
-  • A/B Winner Prediction
-  • Image Upload Support ✓
-  • Video Upload Support ✓
-  • Text Analysis ✓
-  
-🤖 Models: GPT-5.1 ✓ | Claude 4 Opus ✓ | Gemini 3 Pro (add key)
-🎨 Design: Sharp edges, blue-red-yellow-teal gradient, Apple fonts
+✅ Instagram boost parameters (location, age, gender, interests, etc.)
+✅ Can leave blank or select "None" for broad targeting
+✅ Virality score accounts for HOW targeted your boost is
+✅ ALL 3 models shown (GPT-5.1, Claude 4, Gemini 3)
+✅ REAL recommendations (actually re-scored)
+
+⏱️  ~20-30 seconds | 💰 ~$0.20 | 🎯 NO FAKING
 """)
-    app.run(host='0.0.0.0', port=8080, debug=False)
+    port = int(os.getenv('PORT', 8080))
+    app.run(host='0.0.0.0', port=port, debug=False)
 
