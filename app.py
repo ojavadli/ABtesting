@@ -17,7 +17,7 @@ CLAUDE_KEY = os.getenv('CLAUDE_API_KEY')
 GOOGLE_KEY = os.getenv('GOOGLE_API_KEY')
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
 
 openai_client = OpenAI(api_key=OPENAI_KEY)
 claude_client = anthropic.Anthropic(api_key=CLAUDE_KEY)
