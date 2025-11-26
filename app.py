@@ -83,7 +83,7 @@ HTML = """<!DOCTYPE html>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+    font-family: 'Gill Sans', 'Gill Sans MT', Calibri, sans-serif;
     background: linear-gradient(135deg, #1a2a6c 0%, #b21f1f 25%, #fdbb2d 50%, #22c1c3 75%, #fdbb2d 100%);
     background-size: 400% 400%;
     animation: gradient 15s ease infinite;
@@ -92,47 +92,57 @@ body {
 }
 @keyframes gradient { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
 .container { max-width: 1200px; margin: 0 auto; }
-.glass-card { background: rgba(255,255,255,0.15); backdrop-filter: blur(30px); border: 1px solid rgba(255,255,255,0.3); padding: 50px; }
-h1 { color: white; font-size: 3em; font-weight: 700; text-align: center; margin-bottom: 10px; }
-.subtitle { color: rgba(255,255,255,0.9); text-align: center; font-size: 1.1em; margin-bottom: 30px; }
-.box { background: rgba(255,255,255,0.25); backdrop-filter: blur(10px); padding: 25px; border: 1px solid rgba(255,255,255,0.4); margin: 20px 0; }
-.section-title { color: white; font-size: 1.3em; font-weight: 600; margin-bottom: 15px; }
-textarea { width: 100%; min-height: 100px; padding: 15px; background: white; border: none; font-size: 1em; }
-input, select { width: 100%; padding: 12px; background: white; border: none; margin: 8px 0; font-size: 1em; }
+.glass-card { background: rgba(255,255,255,0.15); backdrop-filter: blur(30px); border: 1px solid rgba(255,255,255,0.3); border-radius: 24px; padding: 50px; }
+h1 { color: white; font-size: 2.8em; font-weight: 600; text-align: center; margin-bottom: 10px; letter-spacing: -0.5px; }
+.subtitle { color: rgba(255,255,255,0.9); text-align: center; font-size: 1.1em; margin-bottom: 30px; font-weight: 400; }
+.box { background: rgba(255,255,255,0.25); backdrop-filter: blur(10px); padding: 25px; border: 1px solid rgba(255,255,255,0.4); border-radius: 16px; margin: 20px 0; }
+.section-title { color: white; font-size: 1.2em; font-weight: 600; margin-bottom: 15px; }
+textarea { width: 100%; min-height: 100px; padding: 15px; background: white; border: none; border-radius: 12px; font-size: 1em; font-family: inherit; resize: vertical; }
+input[type="file"] { width: 100%; padding: 12px; background: white; border: none; border-radius: 12px; margin: 8px 0; font-size: 1em; }
+select { width: 100%; padding: 12px 16px; background: white; border: none; border-radius: 12px; margin: 8px 0; font-size: 1em; font-family: inherit; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; cursor: pointer; }
 label { color: white; display: block; margin: 12px 0 5px 0; font-weight: 500; font-size: 0.95em; }
-.btn { background: white; color: #1a2a6c; padding: 15px 40px; border: none; font-size: 1.2em; font-weight: 600; cursor: pointer; display: block; margin: 30px auto; }
-.btn:hover { transform: translateY(-2px); }
-.model-card { background: white; padding: 20px; margin: 12px 0; }
-.model-title { font-size: 1.2em; font-weight: 600; color: #1a2a6c; margin-bottom: 8px; }
-.score-huge { font-size: 2.5em; font-weight: 700; margin: 10px 0; }
-.components { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0; }
-.comp { text-align: center; padding: 8px; background: #f5f5f5; }
-.comp-val { font-size: 1.1em; font-weight: 600; }
-.comp-label { font-size: 0.7em; color: #666; }
-.rec { background: white; padding: 15px; margin: 8px 0; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid #22c1c3; }
-.rec-impact { font-size: 1.3em; font-weight: 700; min-width: 60px; text-align: center; }
-.positive { color: #22c1c3; }
-.negative { color: #b21f1f; }
+.btn { background: white; color: #1a2a6c; padding: 16px 48px; border: none; border-radius: 12px; font-size: 1.1em; font-weight: 600; cursor: pointer; display: block; margin: 30px auto; font-family: inherit; transition: transform 0.2s, box-shadow 0.2s; }
+.btn:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+.model-card { background: white; padding: 24px; margin: 12px 0; border-radius: 16px; }
+.model-title { font-size: 1.1em; font-weight: 600; color: #1a2a6c; margin-bottom: 8px; }
+.score-huge { font-size: 2.8em; font-weight: 700; margin: 10px 0; color: #1a2a6c; }
+.components { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0; }
+.comp { text-align: center; padding: 10px; background: #f5f5f7; border-radius: 10px; }
+.comp-val { font-size: 1.2em; font-weight: 600; color: #1a2a6c; }
+.comp-label { font-size: 0.75em; color: #666; margin-top: 2px; }
+.rec-card { background: white; padding: 24px; margin: 12px 0; border-radius: 16px; }
+.rec-title { font-size: 1.3em; font-weight: 600; color: #1a2a6c; margin-bottom: 20px; }
+.rec-item { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid #f0f0f0; }
+.rec-item:last-child { border-bottom: none; }
+.rec-text { flex: 1; font-size: 1em; color: #333; }
+.rec-impact { font-size: 1.4em; font-weight: 700; min-width: 70px; text-align: right; }
+.positive { color: #00C853; }
+.negative { color: #FF3B30; }
 .neutral { color: #999; }
 .loading { text-align: center; display: none; color: white; margin: 20px 0; }
-.spinner { border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid white; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 15px auto; }
+.spinner { border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid white; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 15px auto; }
 @keyframes spin { 100% { transform: rotate(360deg); } }
 .results { display: none; }
 .targeting-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+.info-bar { background: rgba(255,255,255,0.9); padding: 14px 20px; border-radius: 12px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+.info-label { font-size: 0.9em; color: #666; }
+.info-value { font-size: 0.95em; font-weight: 600; color: #1a2a6c; }
+.note-bar { background: #FFF9E6; padding: 12px 16px; border-radius: 10px; margin-bottom: 16px; font-size: 0.85em; color: #8B7355; border-left: 3px solid #F5C518; }
+.reasoning { margin-top: 12px; font-size: 0.9em; color: #666; line-height: 1.5; }
 </style></head><body>
 <div class="container"><div class="glass-card">
 <h1>Multimodal Agentic System</h1>
 <div class="subtitle">Instagram Boost Targeting + Virality Prediction</div>
 
 <div class="box">
-<div class="section-title">📝 Your Content</div>
+<div class="section-title">Your Content</div>
 <textarea id="text" placeholder="Enter your post caption..."></textarea>
 <label>Upload Image or Video:</label>
 <input type="file" id="file" accept="image/*,video/*">
 </div>
 
 <div class="box">
-<div class="section-title">🎯 Instagram Boost Targeting (Optional)</div>
+<div class="section-title">Instagram Boost Targeting (Optional)</div>
 <div style="color:rgba(255,255,255,0.8);font-size:0.9em;margin-bottom:15px;">Leave blank or select "None" for broad audience. Match your actual Instagram boost settings.</div>
 
 <div class="targeting-grid">
@@ -241,7 +251,6 @@ async function analyze() {
     const fd = new FormData();
     fd.append('text', document.getElementById('text').value);
     
-    // Instagram targeting parameters
     fd.append('location', document.getElementById('location').value);
     fd.append('age', document.getElementById('age').value);
     fd.append('gender', document.getElementById('gender').value);
@@ -258,67 +267,59 @@ async function analyze() {
         
         loading.style.display = 'none';
         
-        // Show targeting summary
         let targeting = 'Broad Audience (No Targeting)';
         const params = [];
         if (data.targeting.location !== 'None (Worldwide)') params.push(data.targeting.location);
         if (data.targeting.age !== 'None (All Ages)') params.push(data.targeting.age);
         if (data.targeting.gender !== 'None (All Genders)') params.push(data.targeting.gender);
         if (data.targeting.interest !== 'None (No Interest Targeting)') params.push(data.targeting.interest);
-        if (params.length > 0) targeting = params.join(' • ');
+        if (params.length > 0) targeting = params.join(' / ');
         
-        // Show media type detected
-        const mediaIcons = {video: '🎥 VIDEO', image: '📸 IMAGE', none: '📝 TEXT ONLY', unknown: '❓ UNKNOWN'};
-        const mediaLabel = mediaIcons[data.media_type] || '';
+        const mediaLabels = {video: 'VIDEO', image: 'IMAGE', none: 'TEXT ONLY', unknown: 'UNKNOWN'};
+        const mediaLabel = mediaLabels[data.media_type] || '';
         
-        let html = `<div class="model-card">
-            <div style="font-size:1.1em;font-weight:600;color:#1a2a6c;margin-bottom:5px;">🎯 Analyzing for: ${targeting}</div>
-            <div style="font-size:1em;color:#666;margin-top:5px;">Media Type: ${mediaLabel}</div>
+        let html = `<div class="info-bar">
+            <div><span class="info-label">Target Audience:</span> <span class="info-value">${targeting}</span></div>
+            <div><span class="info-label">Media:</span> <span class="info-value">${mediaLabel}</span></div>
         </div>`;
         
-        html += '<div class="model-card"><div style="font-size:1.4em;font-weight:700;margin-bottom:15px;color:#1a2a6c;">📊 Virality Scores (All 3 Models)</div>';
-        
-        // Add explanation for video mode
         if (data.media_type === 'video') {
-            html += '<div style="background:#fff3cd;padding:12px;margin-bottom:15px;font-size:0.85em;color:#856404;border-left:3px solid #ffc107;">Note: Gemini analyzes FULL VIDEO (motion, pacing). GPT & Claude analyze keyframe visuals.</div>';
+            html += '<div class="note-bar">Gemini analyzes full video (motion, pacing, audio). GPT and Claude analyze keyframe visuals.</div>';
         }
         
-        // Show each model
+        html += '<div class="model-card"><div style="font-size:1.3em;font-weight:600;margin-bottom:20px;color:#1a2a6c;">Virality Scores</div>';
+        
         ['gpt', 'claude', 'gemini'].forEach(m => {
             if (data[m]) {
-                const names = {gpt:'🤖 GPT-5.1', claude:'🧠 Claude 4 Opus', gemini:'⚡ Gemini 3 Pro'};
+                const names = {gpt:'GPT-5.1', claude:'Claude 4 Opus', gemini:'Gemini 3 Pro'};
                 const s = data[m];
-                html += `<div style="margin:15px 0;padding:15px;background:#f8f9fa;">
+                html += `<div style="margin:20px 0;padding:20px;background:#f8f9fa;border-radius:12px;">
                     <div class="model-title">${names[m]}</div>
-                    <div class="score-huge">${s.overall_score.toFixed(0)}/100</div>
+                    <div class="score-huge">${s.overall_score.toFixed(0)}<span style="font-size:0.4em;color:#666;">/100</span></div>
                     <div class="components">
                         <div class="comp"><div class="comp-val">${s.text_quality.toFixed(0)}</div><div class="comp-label">Text</div></div>
                         <div class="comp"><div class="comp-val">${s.visual_appeal.toFixed(0)}</div><div class="comp-label">Visual</div></div>
                         <div class="comp"><div class="comp-val">${s.emotional_resonance.toFixed(0)}</div><div class="comp-label">Emotional</div></div>
                         <div class="comp"><div class="comp-val">${s.clarity.toFixed(0)}</div><div class="comp-label">Clarity</div></div>
                     </div>
-                    <div style="margin-top:10px;font-size:0.85em;color:#666;">${s.reasoning}</div>
+                    <div class="reasoning">${s.reasoning}</div>
                 </div>`;
             }
         });
         
         html += '</div>';
         
-        // Recommendations
         if (data.recommendations && data.recommendations.length > 0) {
-            html += `<div class="model-card">
-                <div style="font-size:1.4em;font-weight:700;margin-bottom:10px;color:#1a2a6c;">💡 Recommendations (REAL Impact)</div>
-                <div style="font-size:0.85em;color:#666;margin-bottom:15px;">Tested by re-scoring with same targeting + media</div>
-            `;
+            const sorted = data.recommendations.sort((a,b) => b.impact - a.impact).slice(0, 5);
             
-            data.recommendations.forEach(rec => {
+            html += `<div class="rec-card">
+                <div class="rec-title">Top Recommendations</div>`;
+            
+            sorted.forEach(rec => {
                 const cls = rec.impact > 0 ? 'positive' : (rec.impact < 0 ? 'negative' : 'neutral');
                 const sign = rec.impact > 0 ? '+' : '';
-                html += `<div class="rec">
-                    <div style="flex:1;">
-                        <div style="font-weight:600;margin-bottom:5px;">${rec.suggestion}</div>
-                        <div style="font-size:0.85em;color:#666;font-style:italic;">"${rec.improved_text}"</div>
-                    </div>
+                html += `<div class="rec-item">
+                    <div class="rec-text">${rec.suggestion}</div>
                     <div class="rec-impact ${cls}">${sign}${rec.impact.toFixed(0)}</div>
                 </div>`;
             });
