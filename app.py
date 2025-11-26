@@ -519,37 +519,56 @@ def analyze():
         except Exception as e:
             scores['gemini'] = {'overall_score':0,'text_quality':0,'visual_appeal':0,'emotional_resonance':0,'clarity':0,'brand_alignment':0,'reasoning':str(e)}
     
-    # Test 3 improvements - using appropriate media format
-    print(f"\nTesting improvements (REAL re-scoring with {media_type})...")
+    # Generate specific, actionable recommendations using GPT
+    print(f"\nGenerating specific recommendations...")
     recs = []
-    
-    # Use the appropriate media for re-scoring
     media_for_testing = media_image if media_type != "none" else None
     
     try:
-        new = text + " Link in bio!"
-        s = score_gpt(new, media_for_testing, targeting_context)
-        impact = s['overall_score'] - baseline
-        print(f"  1. Add CTA: {baseline} → {s['overall_score']} = {impact:+.0f}")
-        recs.append({'suggestion':'Add call-to-action','improved_text':new,'impact':impact})
-    except: pass
-    
-    try:
-        new = "✨ " + text
-        s = score_gpt(new, media_for_testing, targeting_context)
-        impact = s['overall_score'] - baseline
-        print(f"  2. Add emoji: {baseline} → {s['overall_score']} = {impact:+.0f}")
-        recs.append({'suggestion':'Add emoji','improved_text':new,'impact':impact})
-    except: pass
-    
-    try:
-        words = text.split()
-        new = ' '.join(words[:max(5, int(len(words)*0.6))])
-        s = score_gpt(new, media_for_testing, targeting_context)
-        impact = s['overall_score'] - baseline
-        print(f"  3. Shorten: {baseline} → {s['overall_score']} = {impact:+.0f}")
-        recs.append({'suggestion':'Make more concise','improved_text':new,'impact':impact})
-    except: pass
+        # Ask GPT for 5 specific, actionable improvements
+        rec_prompt = f"""Analyze this social media post and suggest exactly 5 specific, actionable improvements.
+
+Caption: {text}
+Targeting: {targeting_context}
+Media type: {media_type}
+Current score: {baseline}/100
+
+For each suggestion, provide a SPECIFIC change (not generic like "add emoji" but specific like "Add fire emoji after 'amazing'").
+For video: suggest specific changes to music, pacing, hooks, transitions.
+For images: suggest specific visual changes, filters, text overlays.
+For text: suggest specific wording changes, hashtags, CTAs.
+
+Return JSON array with exactly 5 objects, each with:
+- "suggestion": specific actionable change (e.g., "Change opening hook to 'You won't believe...'", "Add upbeat music at 0:03", "Use warmer color filter")
+- "estimated_impact": number from -10 to +15 (realistic estimate of score change)
+
+Be specific! Not "add hashtags" but "Add #entrepreneurship #startup hashtags"."""
+
+        rec_response = openai_client.chat.completions.create(
+            model="gpt-5.1",
+            messages=[{"role":"user","content":rec_prompt}],
+            max_completion_tokens=600,
+            temperature=0.3
+        )
+        rec_data = parse_json(rec_response.choices[0].message.content)
+        
+        # Handle both array and object responses
+        if isinstance(rec_data, list):
+            suggestions = rec_data
+        elif isinstance(rec_data, dict) and 'suggestions' in rec_data:
+            suggestions = rec_data['suggestions']
+        else:
+            suggestions = [rec_data]
+        
+        for item in suggestions[:5]:
+            suggestion = item.get('suggestion', '')
+            impact = item.get('estimated_impact', 0)
+            if suggestion:
+                recs.append({'suggestion': suggestion, 'impact': impact})
+                print(f"  - {suggestion}: {impact:+.0f}")
+        
+    except Exception as e:
+        print(f"  Recommendation generation failed: {e}")
     
     recs.sort(key=lambda x: x['impact'], reverse=True)
     
