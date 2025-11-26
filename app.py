@@ -80,10 +80,13 @@ def score_gemini(text, img_data, targeting_context):
 
 HTML = """<!DOCTYPE html>
 <html><head><title>Multimodal Agentic System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Afacad+Flux:wght@100..1000&display=swap" rel="stylesheet">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
-    font-family: 'Gill Sans', 'Gill Sans MT', Calibri, sans-serif;
+    font-family: 'Afacad Flux', sans-serif;
     background: linear-gradient(135deg, #1a2a6c 0%, #b21f1f 25%, #fdbb2d 50%, #22c1c3 75%, #fdbb2d 100%);
     background-size: 400% 400%;
     animation: gradient 15s ease infinite;
