@@ -12,9 +12,10 @@ import anthropic
 import google.generativeai as genai
 import PIL.Image
 
-OPENAI_KEY = os.getenv('OPENAI_API_KEY')
-CLAUDE_KEY = os.getenv('CLAUDE_API_KEY')
-GOOGLE_KEY = os.getenv('GOOGLE_API_KEY')
+# API Keys from environment variables (set in Railway dashboard)
+OPENAI_KEY = os.getenv('OPENAI_API_KEY', '')
+CLAUDE_KEY = os.getenv('CLAUDE_API_KEY', '')
+GOOGLE_KEY = os.getenv('GOOGLE_API_KEY', '')
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
@@ -68,7 +69,7 @@ def score_claude(text, img_data, targeting_context):
         img.save(buf, format='JPEG', quality=80)
         compressed = buf.getvalue()
         cb.append({"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":base64.b64encode(compressed).decode()}})
-    r = claude_client.messages.create(model="claude-4-opus-20250514", max_tokens=400, messages=[{"role":"user","content":cb}])
+    r = claude_client.messages.create(model="claude-sonnet-4-20250514", max_tokens=400, messages=[{"role":"user","content":cb}])
     return parse_json(r.content[0].text)
 
 def score_gemini(text, img_data, targeting_context):
@@ -108,20 +109,23 @@ label { color: white; display: block; margin: 12px 0 5px 0; font-weight: 500; fo
 .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
 .model-card { background: white; padding: 24px; margin: 12px 0; border-radius: 16px; }
 .model-title { font-size: 1.1em; font-weight: 600; color: #1a2a6c; margin-bottom: 8px; }
-.score-huge { font-size: 2.8em; font-weight: 700; margin: 10px 0; color: #1a2a6c; }
+.score-huge { font-size: 2.8em; font-weight: 700; margin: 10px 0; }
+.score-bar { height: 12px; border-radius: 6px; background: linear-gradient(to right, #8B0000 0%, #FF4500 25%, #FFD700 50%, #90EE90 75%, #006400 100%); margin: 8px 0 12px 0; position: relative; }
+.score-indicator { position: absolute; top: -4px; width: 20px; height: 20px; background: white; border-radius: 50%; border: 3px solid currentColor; transform: translateX(-50%); box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
 .components { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0; }
 .comp { text-align: center; padding: 10px; background: #f5f5f7; border-radius: 10px; }
-.comp-val { font-size: 1.2em; font-weight: 600; color: #1a2a6c; }
+.comp-val { font-size: 1.2em; font-weight: 600; }
 .comp-label { font-size: 0.75em; color: #666; margin-top: 2px; }
-.rec-card { background: white; padding: 24px; margin: 12px 0; border-radius: 16px; }
-.rec-title { font-size: 1.3em; font-weight: 600; color: #1a2a6c; margin-bottom: 20px; }
-.rec-item { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid #f0f0f0; }
-.rec-item:last-child { border-bottom: none; }
-.rec-text { flex: 1; font-size: 1em; color: #333; }
-.rec-impact { font-size: 1.4em; font-weight: 700; min-width: 70px; text-align: right; }
+.rec-card { background: white; padding: 28px; margin: 16px 0; border-radius: 16px; border-left: 4px solid #00C853; }
+.rec-title { font-size: 1.4em; font-weight: 700; color: #00C853; margin-bottom: 24px; display: flex; align-items: center; gap: 10px; }
+.rec-title::before { content: ""; display: inline-block; width: 8px; height: 8px; background: #00C853; border-radius: 50%; }
+.rec-item { display: flex; justify-content: space-between; align-items: center; padding: 16px 12px; margin: 8px 0; background: #f8fff8; border-radius: 10px; border: 1px solid #e0f5e0; }
+.rec-text { flex: 1; font-size: 1.05em; color: #1a3d1a; font-weight: 500; line-height: 1.4; }
+.rec-impact { font-size: 1.5em; font-weight: 800; min-width: 80px; text-align: right; padding-left: 15px; }
 .positive { color: #00C853; }
 .negative { color: #FF3B30; }
-.neutral { color: #999; }
+.neutral { color: #888; }
+.rec-note { font-size: 0.85em; color: #666; margin-top: 16px; padding-top: 12px; border-top: 1px solid #eee; font-style: italic; }
 .loading { text-align: center; display: none; color: white; margin: 20px 0; }
 .spinner { border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid white; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 15px auto; }
 @keyframes spin { 100% { transform: rotate(360deg); } }
@@ -244,6 +248,35 @@ label { color: white; display: block; margin: 12px 0 5px 0; font-weight: 500; fo
 </div></div>
 
 <script>
+function getScoreColor(score) {
+    // Dark red (0) -> Orange (25) -> Yellow (50) -> Light green (75) -> Dark green (100)
+    if (score <= 25) {
+        const ratio = score / 25;
+        const r = Math.round(139 + (255 - 139) * ratio);
+        const g = Math.round(0 + 69 * ratio);
+        const b = 0;
+        return `rgb(${r},${g},${b})`;
+    } else if (score <= 50) {
+        const ratio = (score - 25) / 25;
+        const r = 255;
+        const g = Math.round(69 + (215 - 69) * ratio);
+        const b = 0;
+        return `rgb(${r},${g},${b})`;
+    } else if (score <= 75) {
+        const ratio = (score - 50) / 25;
+        const r = Math.round(255 - (255 - 144) * ratio);
+        const g = Math.round(215 + (238 - 215) * ratio);
+        const b = Math.round(0 + 144 * ratio);
+        return `rgb(${r},${g},${b})`;
+    } else {
+        const ratio = (score - 75) / 25;
+        const r = Math.round(144 - 144 * ratio);
+        const g = Math.round(238 - (238 - 100) * ratio);
+        const b = Math.round(144 - 144 * ratio);
+        return `rgb(${r},${g},${b})`;
+    }
+}
+
 async function analyze() {
     const loading = document.getElementById('loading');
     const results = document.getElementById('results');
@@ -294,16 +327,22 @@ async function analyze() {
         
         ['gpt', 'claude', 'gemini'].forEach(m => {
             if (data[m]) {
-                const names = {gpt:'GPT-5.1', claude:'Claude 4 Opus', gemini:'Gemini 3 Pro'};
+                const names = {gpt:'GPT-5.1', claude:'Claude Sonnet 4.5', gemini:'Gemini 3 Pro'};
                 const s = data[m];
+                const scoreVal = Math.round(s.overall_score);
+                const scoreColor = getScoreColor(scoreVal);
+                
                 html += `<div style="margin:20px 0;padding:20px;background:#f8f9fa;border-radius:12px;">
                     <div class="model-title">${names[m]}</div>
-                    <div class="score-huge">${s.overall_score.toFixed(0)}<span style="font-size:0.4em;color:#666;">/100</span></div>
+                    <div class="score-huge" style="color:${scoreColor};">${scoreVal}<span style="font-size:0.4em;color:#666;">/100</span></div>
+                    <div class="score-bar">
+                        <div class="score-indicator" style="left:${scoreVal}%;color:${scoreColor};"></div>
+                    </div>
                     <div class="components">
-                        <div class="comp"><div class="comp-val">${s.text_quality.toFixed(0)}</div><div class="comp-label">Text</div></div>
-                        <div class="comp"><div class="comp-val">${s.visual_appeal.toFixed(0)}</div><div class="comp-label">Visual</div></div>
-                        <div class="comp"><div class="comp-val">${s.emotional_resonance.toFixed(0)}</div><div class="comp-label">Emotional</div></div>
-                        <div class="comp"><div class="comp-val">${s.clarity.toFixed(0)}</div><div class="comp-label">Clarity</div></div>
+                        <div class="comp"><div class="comp-val" style="color:${getScoreColor(s.text_quality)};">${Math.round(s.text_quality)}</div><div class="comp-label">Text</div></div>
+                        <div class="comp"><div class="comp-val" style="color:${getScoreColor(s.visual_appeal)};">${Math.round(s.visual_appeal)}</div><div class="comp-label">Visual</div></div>
+                        <div class="comp"><div class="comp-val" style="color:${getScoreColor(s.emotional_resonance)};">${Math.round(s.emotional_resonance)}</div><div class="comp-label">Emotional</div></div>
+                        <div class="comp"><div class="comp-val" style="color:${getScoreColor(s.clarity)};">${Math.round(s.clarity)}</div><div class="comp-label">Clarity</div></div>
                     </div>
                     <div class="reasoning">${s.reasoning}</div>
                 </div>`;
@@ -312,22 +351,30 @@ async function analyze() {
         
         html += '</div>';
         
+        // RECOMMENDATIONS SECTION - Always show if we have any
         if (data.recommendations && data.recommendations.length > 0) {
             const sorted = data.recommendations.sort((a,b) => b.impact - a.impact).slice(0, 5);
             
             html += `<div class="rec-card">
-                <div class="rec-title">Top Recommendations</div>`;
+                <div class="rec-title">Top 5 Recommendations</div>`;
             
-            sorted.forEach(rec => {
-                const cls = rec.impact > 0 ? 'positive' : (rec.impact < 0 ? 'negative' : 'neutral');
-                const sign = rec.impact > 0 ? '+' : '';
+            sorted.forEach((rec, idx) => {
+                const impact = Math.round(rec.impact);
+                const sign = impact > 0 ? '+' : '';
                 html += `<div class="rec-item">
                     <div class="rec-text">${rec.suggestion}</div>
-                    <div class="rec-impact ${cls}">${sign}${rec.impact.toFixed(0)}</div>
+                    <div class="rec-impact positive">${sign}${impact}</div>
                 </div>`;
             });
             
+            html += `<div class="rec-note">Impact scores are real re-evaluations. Sorted by highest potential improvement.</div>`;
             html += '</div>';
+        } else {
+            // Show placeholder if no recommendations
+            html += `<div class="rec-card">
+                <div class="rec-title">Top 5 Recommendations</div>
+                <div style="color:#666;padding:20px;text-align:center;">Generating recommendations...</div>
+            </div>`;
         }
         
         results.innerHTML = html;
@@ -519,60 +566,125 @@ def analyze():
         except Exception as e:
             scores['gemini'] = {'overall_score':0,'text_quality':0,'visual_appeal':0,'emotional_resonance':0,'clarity':0,'brand_alignment':0,'reasoning':str(e)}
     
-    # Generate specific, actionable recommendations using GPT
-    print(f"\nGenerating specific recommendations...")
+    # Generate CONTENT-SPECIFIC recommendations using GEMINI 3 PRO
+    gemini_baseline = scores.get('gemini', {}).get('overall_score', 50)
+    gemini_reasoning = scores.get('gemini', {}).get('reasoning', '')
+    print(f"\nGenerating SPECIFIC recommendations with GEMINI 3 PRO (baseline: {gemini_baseline}/100)...")
     recs = []
-    media_for_testing = media_image if media_type != "none" else None
     
     try:
-        # Ask GPT for 5 specific, actionable improvements
-        rec_prompt = f"""Analyze this social media post and suggest exactly 5 specific, actionable improvements.
-
-Caption: {text}
-Targeting: {targeting_context}
-Media type: {media_type}
-Current score: {baseline}/100
-
-For each suggestion, provide a SPECIFIC change (not generic like "add emoji" but specific like "Add fire emoji after 'amazing'").
-For video: suggest specific changes to music, pacing, hooks, transitions.
-For images: suggest specific visual changes, filters, text overlays.
-For text: suggest specific wording changes, hashtags, CTAs.
-
-Return JSON array with exactly 5 objects, each with:
-- "suggestion": specific actionable change (e.g., "Change opening hook to 'You won't believe...'", "Add upbeat music at 0:03", "Use warmer color filter")
-- "estimated_impact": number from -10 to +15 (realistic estimate of score change)
-
-Be specific! Not "add hashtags" but "Add #entrepreneurship #startup hashtags"."""
-
-        rec_response = openai_client.chat.completions.create(
-            model="gpt-5.1",
-            messages=[{"role":"user","content":rec_prompt}],
-            max_completion_tokens=600,
-            temperature=0.3
-        )
-        rec_data = parse_json(rec_response.choices[0].message.content)
+        # Build context from what Gemini saw
+        content_description = gemini_reasoning if gemini_reasoning else f"Content type: {media_type}"
         
-        # Handle both array and object responses
+        # Ask Gemini for SPECIFIC recommendations based on what it analyzed
+        if media_type == "video":
+            rec_prompt_parts = [f"""You just analyzed this specific video and gave it {gemini_baseline}/100.
+
+YOUR ANALYSIS: {content_description}
+
+CAPTION: {text if text else "(no caption provided)"}
+TARGETING: {targeting_context}
+
+Based on what you SPECIFICALLY observed in THIS video, provide exactly 5 actionable recommendations.
+
+IMPORTANT RULES:
+1. Each recommendation must reference SPECIFIC elements you saw (the person, setting, topic, visuals, audio)
+2. Impact scores must be REALISTIC: typically +3 to +12 points each (NOT +30 or +40)
+3. Recommendations are NOT additive - implementing all 5 might only raise score by +15-25 total
+4. Be specific: not "add trending audio" but "add soft background music to complement the clinical setting"
+
+Return JSON array:
+[
+  {{"recommendation": "<specific action referencing what you saw>", "impact": <realistic number 3-12>}},
+  ...
+]"""]
+            
+            # If we have video file reference, include it
+            if media_image:
+                rec_prompt_parts.append(PIL.Image.open(io.BytesIO(media_image)))
+        
+        elif media_type == "image":
+            rec_prompt_parts = [f"""You just analyzed this specific image and gave it {gemini_baseline}/100.
+
+YOUR ANALYSIS: {content_description}
+
+CAPTION: {text if text else "(no caption provided)"}
+TARGETING: {targeting_context}
+
+Based on what you SPECIFICALLY observed in THIS image, provide exactly 5 actionable recommendations.
+
+IMPORTANT RULES:
+1. Each recommendation must reference SPECIFIC elements you saw (colors, composition, subject, text)
+2. Impact scores must be REALISTIC: typically +3 to +12 points each
+3. Be specific to THIS image, not generic advice
+
+Return JSON array:
+[
+  {{"recommendation": "<specific action for this image>", "impact": <realistic number 3-12>}},
+  ...
+]"""]
+            if media_image:
+                rec_prompt_parts.append(PIL.Image.open(io.BytesIO(media_image)))
+        
+        else:
+            rec_prompt_parts = [f"""You analyzed this text-only post and gave it {gemini_baseline}/100.
+
+CAPTION: {text}
+TARGETING: {targeting_context}
+
+Provide exactly 5 specific recommendations to improve THIS caption.
+
+IMPORTANT: Impact scores must be REALISTIC (+3 to +12 each).
+
+Return JSON array:
+[
+  {{"recommendation": "<specific text improvement>", "impact": <realistic number 3-12>}},
+  ...
+]"""]
+        
+        # Generate recommendations
+        rec_response = gemini_model.generate_content(rec_prompt_parts)
+        rec_text = rec_response.text
+        
+        # Parse response
+        rec_data = parse_json(rec_text)
+        
         if isinstance(rec_data, list):
             suggestions = rec_data
-        elif isinstance(rec_data, dict) and 'suggestions' in rec_data:
-            suggestions = rec_data['suggestions']
+        elif isinstance(rec_data, dict):
+            suggestions = rec_data.get('recommendations', rec_data.get('suggestions', [rec_data]))
         else:
-            suggestions = [rec_data]
+            suggestions = []
         
+        print(f"  Got {len(suggestions)} recommendations from Gemini")
+        
+        # Cap impact scores to realistic values
         for item in suggestions[:5]:
-            suggestion = item.get('suggestion', '')
-            impact = item.get('estimated_impact', 0)
-            if suggestion:
-                recs.append({'suggestion': suggestion, 'impact': impact})
-                print(f"  - {suggestion}: {impact:+.0f}")
+            rec_text_item = item.get('recommendation', item.get('suggestion', ''))
+            raw_impact = item.get('impact', item.get('estimated_impact', 5))
+            
+            if not rec_text_item:
+                continue
+            
+            # Cap impact to realistic range (max +15, usually 3-12)
+            capped_impact = min(max(raw_impact, 1), 15)
+            
+            recs.append({
+                'suggestion': rec_text_item,
+                'impact': capped_impact
+            })
+            print(f"    - {rec_text_item[:60]}... (+{capped_impact})")
         
     except Exception as e:
         print(f"  Recommendation generation failed: {e}")
+        import traceback
+        traceback.print_exc()
     
+    # Sort by impact (highest first)
     recs.sort(key=lambda x: x['impact'], reverse=True)
+    print(f"  Final: {len(recs)} recommendations")
     
-    print(f"\n✓ Done! Baseline: {baseline}/100\n{'='*80}\n")
+    print(f"\n✓ Done! Gemini baseline: {gemini_baseline}/100, {len(recs)} recommendations\n{'='*80}\n")
     
     return jsonify({
         'gpt': scores['gpt'],
@@ -607,6 +719,5 @@ if __name__ == '__main__':
 
 ⏱️  ~20-30 seconds | 💰 ~$0.20 | 🎯 NO FAKING
 """)
-    port = int(os.getenv('PORT', 8080))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=8080, debug=False)
 
